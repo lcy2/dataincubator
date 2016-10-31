@@ -157,7 +157,7 @@ def part_five(fl):
                 print '\r%s' % row[0],
                 sys.stdout.write("\x1b[2K")
 
-    print ctr/float(samestopctr)
+    print float(samestopctr)/ctr
 
     
     
@@ -314,7 +314,7 @@ filelist = readallfiles()
 #part_two(filelist)
 #part_three(filelist)
 #part_four(filelist)
-#part_five(filelist)
+part_five(filelist)
 #part_six(filelist)
 #part_seven(filelist)
-part_eight(filelist)
+#part_eight(filelist)

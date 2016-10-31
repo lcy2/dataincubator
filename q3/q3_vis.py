@@ -46,7 +46,7 @@ def get_time_array():
     rounded_time = curr_time.replace(minute = 0, second = 0, microsecond = 0)
     past_hours = [1000* time.mktime(curr_time.timetuple())]
 
-    for i in range(25):
+    for i in range(49):
         past_hours.append(1000* time.mktime((rounded_time - d_hour * (i)).timetuple()))
         
     #print "Time Array:"
@@ -56,7 +56,8 @@ def get_time_array():
 
     
 def db_collection(conn):
-    # get the starting timestamp for the past 24 hours
+    # get the starting timestamp for the past 48 hours
+    # collapse that into 24 hours
     t_array = get_time_array()
     res_array = []
     
@@ -72,16 +73,34 @@ def db_collection(conn):
             mini_res_array = []
             with conn as loc_cursor:
                 for hour_index in range(len(t_array)-1):
-                    query2 = "SELECT AVG(sentiment) as avg_s, COUNT(sentiment) as sum_s FROM locations WHERE (place_id = '%s' AND (dt_ms BETWEEN '%d' AND '%d')) ORDER BY dt_ms DESC" % (place_id, t_array[hour_index+1], t_array[hour_index])
+
+                    if place_id == 0:
+                        query2 = "SELECT SUM(sentiment) as avg_s, COUNT(sentiment) as sum_s FROM locations WHERE (dt_ms BETWEEN '%d' AND '%d') ORDER BY dt_ms DESC" % (place_id, t_array[hour_index+1], t_array[hour_index])
+                    else:
+                        query2 = "SELECT SUM(sentiment) as avg_s, COUNT(sentiment) as sum_s FROM locations WHERE (place_id = '%s' AND (dt_ms BETWEEN '%d' AND '%d')) ORDER BY dt_ms DESC" % (place_id, t_array[hour_index+1], t_array[hour_index])
                     print "Processing %s at T-%d hour." % (row[1], hour_index)
                     loc_cursor.execute(query2)
                     loc_res = loc_cursor.fetchone()
                     print loc_res
                     
                     # structure of each row [place_id, place_name, the hour, avg_sentiment, total counts]
-                    rt_array = [place_id, row[1], t_array[hour_index], loc_res[0], loc_res[1]]
+                    rt_array = [place_id, row[1], t_array[hour_index], loc_res[0] if loc_res[0] != None else 0, loc_res[1]]
                     mini_res_array.append(rt_array)
-            res_array.append(mini_res_array)
+                    
+                    
+            # turn the 48 hour record into 24 unique hour marks
+            # for anything more than 24 hours away, add 24 hours
+            
+            for i in range(24,len(mini_res_array)):
+                mini_res_array[i % 24][3] += mini_res_array[i][3]
+                mini_res_array[i % 24][4] += mini_res_array[i][4]
+            
+            for res in mini_res_array[:24]:
+                res[3] = res[3]/res[4]
+            
+            res_array.append(mini_res_array[:24])
+            print 'Final result array:'
+            print [res[3] for res in mini_res_array[:24]]
     return res_array
                     
                         
@@ -120,8 +139,8 @@ def geo_tz_shift(res):
     
 if __name__ == "__main__":
     conn = db_connect('dataincubator')
-    esults = db_collection(conn)
-    cache_data(results, 'tmpdump')
+    #results = db_collection(conn)
+    #cache_data(results, 'tmpdump')
     
     results2 = load_data('tmpdump')
     plt.figure(1)
@@ -137,15 +156,18 @@ if __name__ == "__main__":
     for result in results2:
 
         geo_tz_shift(result)
-        res = np.array(result[1:])
-        sorted_res = res[res[:,5].argsort()]
+        res = np.array(result)
+        
+        sorted_res = res[np.array([int(x) for x in res[:,5]]).argsort()]
+        print sorted_res
         plt.plot(sorted_res[:,5],sorted_res[:,3], '-')
         
         # beautification
         axes = plt.gca()
-        axismin =  min(x for x in res[:,3] if x != None)
-        axismax =  max(res[:,3])
+        axismin =  min(float(x) for x in res[:,3] if x != None)
+        axismax =  max(float(x) for x in res[:,3])
         axes.set_ylim([axismin - (axismax - axismin) * 0.1, axismax + (axismax - axismin) * 0.1])
+        axes.set_xlim([0,23])
         plt.xlabel("Hour of the Day")
         plt.ylabel("Average Sentiment")
         if res[0,1] != 'untagged':
